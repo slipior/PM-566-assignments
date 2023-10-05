@@ -1,0 +1,205 @@
+---
+title: "PM 566 Assignment 1"
+author: "Sylwia Lipior"
+format: html
+embed-resources: true
+editor: visual
+---
+
+Read in the data
+
+```{r}
+#Read in the data
+Data_2002 <- data.table::fread('ad_viz_plotval_data_2002.csv')
+Data_2022 <- data.table::fread('ad_viz_plotval_data_2022.csv')
+
+summary(Data_2002)
+summary(Data_2022)
+
+head(Data_2002)
+head(Data_2022)
+
+tail(Data_2002)
+tail(Data_2002)
+
+dim(Data_2002)
+dim(Data_2022)
+
+str(Data_2002)
+str(Data_2022)
+
+# get variable names
+names(Data_2002)
+names(Data_2022)
+
+```
+
+Both of the data sets have the same 20 variables. Data_2002 has 15976 observations, while Data_2022 has 57775 observations (almost 3 times as many).
+
+```{r}
+
+#To vertically concetenate the data sets
+
+Data_2002$Year <- 2002
+
+Data_2022$Year <- 2022
+
+all_data <- rbind(Data_2002, Data_2022)
+
+# Change Daily Mean PM2.5 Concentration to PM2.5
+names(all_data)[names(all_data) == "Daily Mean PM2.5 Concentration"] <- "PM2.5"
+names(all_data)[names(all_data) == "SITE_LATITUDE"] <- "lat"
+names(all_data)[names(all_data) == "SITE_LONGITUDE"] <- "lon"
+names(all_data)[names(all_data) == "Site Name"] <- "Site_Name"
+
+```
+
+Leaflet map
+
+```{r}
+
+library(leaflet)
+library(leaflet.extras)
+
+# Create a color palette with custom colors
+color_pal <- colorNumeric(
+  palette = c("blue", "red"),  # Define custom colors
+  domain = all_data$Year  # Set the range of values
+)
+
+# Create a leaflet map
+map <- leaflet(data = all_data) %>%
+  addProviderTiles("CartoDB.Positron") %>%  
+  addCircleMarkers(
+    lat = ~lat,
+    lng = ~lon,
+    radius = 3,
+    fillOpacity = 0.8,
+    color = ~color_pal(Year),  # Assign colors based on relative humidity values
+  ) %>%
+  addLegend(
+    title = "Site Location by Year",
+    colors = c("blue", "red"),  # Custom colors
+    labels = c("2002", "2022"),  # Color labels
+    opacity = 3,
+    position = "bottomleft"
+  )
+
+# Show the map
+map
+
+```
+
+There are many more locations in 2022 than in 2002. There are many more sites around/near the large coastal cities of San Diego, Los Angeles, and San Francisco.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+all_data$Date <- mdy(all_data$Date)
+
+# Assuming you have a date or timestamp variable called "DateTime"
+
+# Create a histogram of PM2.5 values
+ggplot(all_data, aes(x = PM2.5)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black") +
+  labs(title = "Distribution of PM2.5 Values",
+       x = "PM2.5 Value", y = "Frequency") +
+  theme_minimal()
+
+
+# Create a new data frame with counts of missing and implausible values by date
+summary_data <- all_data %>%
+  mutate(Implausible = PM2.5 < 0 | PM2.5 > 500) %>%
+  group_by(Date = as.Date(Date)) %>%
+  summarise(Count_Implausible = sum(Implausible))
+
+# Create a line plot to visualize the counts over time
+ggplot(summary_data, aes(x = Date)) +
+  geom_line(aes(y = Count_Implausible, color = "Implausible")) +
+  labs(title = "Implausible PM2.5 Values Over Time",
+       x = "Date", y = "Count") +
+  scale_color_manual(values = c("Missing" = "red", "Implausible" = "blue")) +
+  theme_minimal()
+
+```
+
+There are 143 implausible data points, they occur largely in the beginning of the data set and at the end. A PM 2.5 of greater than 500 seems implausible and all of those values occur in 2022 which could possibly be explained by more testing sites, more measurements being taken, or issues with instrumentation.
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# State Level Analysis
+state_summary <- all_data %>%
+  group_by(Year) %>%
+  summarise(
+    Mean_PM2.5 = mean(PM2.5, na.rm = TRUE),
+    SD_PM2.5 = sd(PM2.5, na.rm = TRUE)
+  )
+
+# Plot: Barplot of average PM2.5 levels by year
+ggplot(state_summary, aes(x = as.factor(Year), y = Mean_PM2.5)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Average PM2.5 Levels by Year in California", x = "Year", y = "Mean PM2.5") +
+  theme_minimal()
+
+
+# Plot: Histogram of PM2.5 levels within California
+ggplot(all_data, aes(x = PM2.5)) +
+  geom_histogram(binwidth = 2, fill = "lightgreen") +
+  labs(title = "PM2.5 Distribution in California", x = "PM2.5 Levels") +
+  theme_minimal()
+
+# County level analysis
+county_summary <- all_data %>%
+  group_by(COUNTY) %>%
+  summarise(
+    Mean_PM2.5 = mean(PM2.5, na.rm = TRUE),
+    SD_PM2.5 = sd(PM2.5, na.rm = TRUE),
+    Median_PM2.5 = median(PM2.5, na.rm = TRUE)
+  )
+
+# Plot: Create boxplots for each county to visualize PM2.5 distribution
+ggplot(all_data, aes(x = COUNTY, y = PM2.5)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "PM2.5 Distribution by County", x = "County", y = "PM2.5 Levels") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+
+# Site Level Analysis (Los Angeles County)
+la_county_data <- all_data %>%
+  filter(COUNTY == "Los Angeles")
+
+# Summary Statistic: Mean and SD of PM2.5 levels at monitoring sites in LA County
+la_summary <- la_county_data %>%
+  group_by(Year) %>%
+  summarise(
+    Mean_PM2.5 = mean(PM2.5, na.rm = TRUE),
+    SD_PM2.5 = sd(PM2.5, na.rm = TRUE)
+  )
+
+# Define custom colors for LA County and State
+la_color <- "red"
+state_color <- "blue"
+
+# Plot: Barplot of average PM2.5 levels by year for Los Angeles County and the entire state
+ggplot() +
+  geom_bar(data = la_summary, aes(x = as.factor(Year), y = Mean_PM2.5, fill = "LA County"), stat = "identity", position = "dodge") +
+  geom_bar(data = state_summary, aes(x = as.factor(Year), y = Mean_PM2.5, fill = "State"), stat = "identity", position = "dodge") +
+  labs(title = "Average PM2.5 Levels in LA County and California", x = "Year", y = "Mean PM2.5") +
+  scale_fill_manual(values = c("LA County" = la_color, "State" = state_color)) +
+  theme_minimal() +
+  guides(fill = guide_legend(title = "Location"))
+
+
+```
+
+At the state level, we look at the histogram of PM 2.5 levels in California, and find that the data is distributed with the most counts around 10.
+
+At the county level, we look at the PM 2.5 distribution by county. We find that counties like Placer, Nevada, Trinity, and Siskiyou have some of the highest PM 2.5 levels in the state.
+
+At the LA county level, we look at the over PM 2.5 level in 2002 and 2022 and find that LA county is higher than the state average in both years, but both the state and the county average is lower in 2022.
